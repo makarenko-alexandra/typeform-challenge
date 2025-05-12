@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { FormModel } from '../models/Form';
 import { Form } from '../types/Form';
+import { SubmissionModel } from '../models/Submission';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
@@ -59,6 +61,74 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
       return res.status(404).json({ error: 'Form not found' });
     }
     res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- SUBMISSIONS ENDPOINTS ---
+
+// Create a new submission for a form
+router.post('/:formId/submissions', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { answers } = req.body;
+    if (!answers || typeof answers !== 'object') {
+      return res.status(400).json({ error: 'Invalid answers' });
+    }
+    const id = uuidv4();
+    const submission = new SubmissionModel({
+      id,
+      formId: req.params.formId,
+      answers,
+    });
+    const savedSubmission = await submission.save();
+    res.status(201).json(savedSubmission);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get all submissions for a form
+router.get('/:formId/submissions', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const submissions = await SubmissionModel.find({ formId: req.params.formId }).sort({ createdAt: -1 });
+    res.json(submissions);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get a single submission by ID
+router.get('/:formId/submissions/:submissionId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { formId, submissionId } = req.params;
+    const submission = await SubmissionModel.findOne({ formId, id: submissionId });
+    if (!submission) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+    res.json(submission);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update a submission by ID
+router.put('/:formId/submissions/:submissionId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { formId, submissionId } = req.params;
+    const { answers } = req.body;
+    if (!answers || typeof answers !== 'object') {
+      return res.status(400).json({ error: 'Invalid answers' });
+    }
+    const updatedSubmission = await SubmissionModel.findOneAndUpdate(
+      { formId, id: submissionId },
+      { answers },
+      { new: true, runValidators: true }
+    );
+    if (!updatedSubmission) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+    res.json(updatedSubmission);
   } catch (error) {
     next(error);
   }
