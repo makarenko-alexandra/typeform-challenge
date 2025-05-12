@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 export interface Submission {
   id: string;
   formId: string;
+  formVersion: number;
   answers: Record<string, string>;
   createdAt: string;
   updatedAt: string;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Stack, Title, TextInput, Button, Text, Paper, Group, Code } from '@mantine/core';
+import { Box, Stack, Title, TextInput, Button, Text, Paper, Group, Code, ActionIcon, Divider, Tooltip } from '@mantine/core';
 import Question from '../components/Question';
 import {
   useForm as useFormQuery,
@@ -9,6 +9,8 @@ import {
   useUpdateForm,
 } from '../queries/formQueries';
 import type { Form as ApiFormType } from '../queries/formQueries';
+import { notifications } from '@mantine/notifications';
+import { IconPencil, IconEye } from '@tabler/icons-react';
 
 const Builder: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
@@ -24,22 +26,19 @@ const Builder: React.FC = () => {
   const updateForm = useUpdateForm();
 
   useEffect(() => {
-    if (id) {
-      if (form) {
-        setQuestions(form.fields.map(f => f.label));
-        setTitle(form.title || '');
-        setNotFound(false);
-      } else if (!formLoading && formError) {
-        setQuestions([]);
-        setTitle('');
-        setNotFound(true);
-      }
-    } else {
+    if (id && form) {
+      setQuestions(form.fields.map(f => f.label));
+      setTitle(form.title || '');
+      setNotFound(false);
+    } else if (id && !formLoading && formError) {
+      setQuestions([]);
+      setTitle('');
+      setNotFound(true);
+    } else if (!id) {
       setQuestions([]);
       setTitle('');
       setNotFound(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, form, formLoading, formError]);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,6 +57,10 @@ const Builder: React.FC = () => {
     setQuestion('');
   };
 
+  const handleRemoveQuestion = (idx: number) => {
+    setQuestions(qs => qs.filter((_, i) => i !== idx));
+  };
+
   const handleSaveClick = async () => {
     const fields = questions.map((q, idx) => ({
       name: `q${idx}`,
@@ -65,10 +68,21 @@ const Builder: React.FC = () => {
       type: 'text' as const,
     }));
     if (id && form) {
-      await updateForm.mutateAsync({ id, form: { title, fields } });
+      const updated = await updateForm.mutateAsync({ id, form: { title, fields } });
+      navigate(`/builder/${updated._id}`);
+      notifications.show({
+        title: 'Form Saved',
+        message: `Saved as version v${updated.version}`,
+        color: 'green',
+      });
     } else {
       const created = await createForm.mutateAsync({ title, fields });
       navigate(`/builder/${created._id}`);
+      notifications.show({
+        title: 'Form Created',
+        message: `Created as version v${created.version}`,
+        color: 'green',
+      });
     }
   };
 
@@ -122,14 +136,21 @@ const Builder: React.FC = () => {
       ) : (
         <Stack gap="xs" aria-label="List of questions">
           {questions.map((q, idx) => (
-            <Question key={idx} title={q} value="" />
+            <Question
+              key={idx}
+              title={q}
+              value=""
+              readonly={true}
+              onRemove={() => handleRemoveQuestion(idx)}
+              onTitleChange={newTitle => setQuestions(qs => qs.map((old, i) => i === idx ? newTitle : old))}
+            />
           ))}
         </Stack>
       )}
       <Button
         mt="xl"
         fullWidth
-        disabled={questions.length === 0 || !title.trim()}
+        disabled={questions.length === 0 || !title.trim() || createForm.isPending || updateForm.isPending}
         aria-label="Save questions"
         onClick={handleSaveClick}
         loading={createForm.isPending || updateForm.isPending}
@@ -142,15 +163,75 @@ const Builder: React.FC = () => {
       ) : forms.length === 0 ? (
         <Text color="dimmed">No forms created yet.</Text>
       ) : (
-        <Stack gap="sm">
-          {forms.map((form: ApiFormType) => (
-            <Paper key={form._id} withBorder p="md" radius="md" onClick={() => navigate(`/render/${form._id}`)} style={{ cursor: 'pointer' }}>
-              <Group justify="space-between">
-                <Text size="sm">ID: <Code>{form._id}</Code></Text>
-                <Text size="sm" color="dimmed">{new Date(form.createdAt).toLocaleString()}</Text>
-              </Group>
-            </Paper>
-          ))}
+        <Stack gap="lg">
+          {Array.from(
+            forms.reduce((acc, form) => {
+              if (!acc.has(form.formKey)) acc.set(form.formKey, []);
+              acc.get(form.formKey)!.push(form);
+              return acc;
+            }, new Map()),
+          ).map(([formKey, group], idx, arr) => {
+            // Sort versions descending
+            const sorted = [...group].sort((a, b) => b.version - a.version);
+            const latest = sorted[0];
+            return (
+              <Paper key={formKey} withBorder p="md" radius="md" shadow="sm">
+                <Group justify="space-between" align="center" mb="xs">
+                  <div>
+                    <Text size="lg" fw={700}>{latest.title}</Text>
+                    <Text size="xs" color="dimmed">Form Key: {formKey}</Text>
+                  </div>
+                </Group>
+                <Divider mb="xs" />
+                <Stack gap={0}>
+                  <Group px="xs" py={4} style={{ fontWeight: 600, fontSize: 14, color: '#666' }}>
+                    <Text w={80}>Version</Text>
+                    <Text w={180}>Created</Text>
+                    <Text w={220}>Form ID</Text>
+                    <Text w={100}>Actions</Text>
+                  </Group>
+                  {sorted.map((form) => (
+                    <Group key={form._id} px="xs" py={6} style={{ background: '#fafbfc', borderRadius: 6, marginBottom: 4 }}>
+                      <Text w={80}>v{form.version}</Text>
+                      <Text w={180} size="xs" color="dimmed">{new Date(form.createdAt).toLocaleString()}</Text>
+                      <Text w={220} size="xs" color="dimmed" style={{ wordBreak: 'break-all' }}><Code>{form._id}</Code></Text>
+                      <Group w={100} gap={8}>
+                        <Tooltip label="Edit this version" withArrow>
+                          <ActionIcon
+                            variant="light"
+                            color="blue"
+                            aria-label="Edit form"
+                            tabIndex={0}
+                            onClick={e => {
+                              e.stopPropagation();
+                              navigate(`/builder/${form._id}`);
+                            }}
+                          >
+                            <IconPencil size={18} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Render this version" withArrow>
+                          <ActionIcon
+                            variant="light"
+                            color="teal"
+                            aria-label="Render form"
+                            tabIndex={0}
+                            onClick={e => {
+                              e.stopPropagation();
+                              navigate(`/render/${form._id}`);
+                            }}
+                          >
+                            <IconEye size={18} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Group>
+                    </Group>
+                  ))}
+                </Stack>
+                {idx < arr.length - 1 && <Divider mt="md" />}
+              </Paper>
+            );
+          })}
         </Stack>
       )}
     </Box>

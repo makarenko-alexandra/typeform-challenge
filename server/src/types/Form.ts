@@ -9,6 +9,8 @@ export interface FormField {
 }
 
 export interface Form extends Document {
+  formKey: string;
+  version: number;
   title: string;
   description?: string;
   fields: FormField[];

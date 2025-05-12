@@ -9,7 +9,11 @@ const router = Router();
 // Create a new form
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const form = new FormModel(req.body as Partial<Form>);
+    // If formKey is not provided, generate a new one (new logical form)
+    const formKey = req.body.formKey || uuidv4();
+    // Always start at version 1 for new logical forms
+    const version = 1;
+    const form = new FormModel({ ...req.body, formKey, version });
     const savedForm = await form.save();
     res.status(201).json(savedForm);
   } catch (error) {
@@ -40,14 +44,25 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// Update a form by ID
+// Update a form by ID (create a new version)
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const updatedForm = await FormModel.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-    if (!updatedForm) {
+    // Find the existing form to get its formKey and latest version
+    const existingForm = await FormModel.findById(req.params.id);
+    if (!existingForm) {
       return res.status(404).json({ error: 'Form not found' });
     }
-    res.json(updatedForm);
+    // Find the latest version for this formKey
+    const latest = await FormModel.find({ formKey: existingForm.formKey }).sort({ version: -1 }).limit(1);
+    const nextVersion = latest.length > 0 ? latest[0].version + 1 : 1;
+    // Create a new form document with incremented version
+    const newForm = new FormModel({
+      ...req.body,
+      formKey: existingForm.formKey,
+      version: nextVersion,
+    });
+    const savedForm = await newForm.save();
+    res.status(201).json(savedForm);
   } catch (error) {
     next(error);
   }
@@ -75,10 +90,16 @@ router.post('/:formId/submissions', async (req: Request, res: Response, next: Ne
     if (!answers || typeof answers !== 'object') {
       return res.status(400).json({ error: 'Invalid answers' });
     }
+    // Find the form to get its version
+    const form = await FormModel.findById(req.params.formId);
+    if (!form) {
+      return res.status(404).json({ error: 'Form not found' });
+    }
     const id = uuidv4();
     const submission = new SubmissionModel({
       id,
       formId: req.params.formId,
+      formVersion: form.version,
       answers,
     });
     const savedSubmission = await submission.save();

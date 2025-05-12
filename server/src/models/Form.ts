@@ -10,6 +10,8 @@ const FormFieldSchema = new Schema({
 });
 
 const FormSchema = new Schema<Form>({
+  formKey: { type: String, required: true, index: true },
+  version: { type: Number, required: true },
   title: { type: String, required: true },
   description: { type: String },
   fields: { type: [FormFieldSchema], required: true },

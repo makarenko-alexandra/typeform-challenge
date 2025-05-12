@@ -10,6 +10,8 @@ export interface FormField {
 
 export interface Form {
   _id: string;
+  formKey: string;
+  version: number;
   title: string;
   description?: string;
   fields: FormField[];
@@ -51,8 +53,26 @@ export const updateForm = async ({ id, form }: { id: string; form: Partial<Form>
   return res.json();
 };
 
+export const fetchLatestForms = async (): Promise<Form[]> => {
+  const allForms = await fetchForms();
+  const latestMap = new Map<string, Form>();
+  for (const form of allForms) {
+    const existing = latestMap.get(form.formKey);
+    if (!existing || form.version > existing.version) {
+      latestMap.set(form.formKey, form);
+    }
+  }
+  return Array.from(latestMap.values());
+};
+
+export const fetchFormVersions = async (formKey: string): Promise<Form[]> => {
+  const allForms = await fetchForms();
+  return allForms.filter(form => form.formKey === formKey).sort((a, b) => b.version - a.version);
+};
+
 export const useForm = (id: string) => useQuery({ queryKey: ['form', id], queryFn: () => fetchForm(id), enabled: !!id });
 export const useForms = () => useQuery({ queryKey: ['forms'], queryFn: fetchForms });
+export const useLatestForms = () => useQuery({ queryKey: ['latestForms'], queryFn: fetchLatestForms });
 export const useCreateForm = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -69,4 +89,5 @@ export const useUpdateForm = () => {
       queryClient.invalidateQueries({ queryKey: ['forms'] });
     },
   });
-}; 
+};
+export const useFormVersions = (formKey: string) => useQuery({ queryKey: ['formVersions', formKey], queryFn: () => fetchFormVersions(formKey), enabled: !!formKey }); 
